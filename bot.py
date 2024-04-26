@@ -24,9 +24,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Replace <api_key> with your actual API key, ensuring it is a string.
 api_key = os.environ["POE_API_KEY"]
+#加入Allow_Users环境变量,创建白名单。Create enviroment variable `Allow_Users`.
+users = list(map(int, os.environ["Allow_Users"].split(',')))
 bot_names = {
     'gpt4': 'GPT-4',
     'claude3': 'Claude-3-Opus'
+}
+model_functions = {
+    'gpt4': 'gpt4',
+    'claude3': 'claude3Opus'
 }
 default_bot_name = bot_names['claude3']
 user_tasks = {}
@@ -115,15 +121,28 @@ async def new_conversation(update: Update, context):
         user_context[user_id] = {'messages': [], 'bot_name': bot_name}
     await context.bot.send_message(chat_id=update.effective_chat.id, text=f"====== 新的对话开始（{bot_name}） ======")
 
-async def gpt4(update: Update, context):
-    user_id = update.effective_user.id
-    bot_name = bot_names['gpt4']
-    await switch_model(user_id, bot_name, update, context)
+# async def gpt4(update: Update, context):
+#     user_id = update.effective_user.id
+#     bot_name = bot_names['gpt4']
+#     await switch_model(user_id, bot_name, update, context)
 
-async def claude3(update: Update, context):
-    user_id = update.effective_user.id
-    bot_name = bot_names['claude3']
-    await switch_model(user_id, bot_name, update, context)
+# async def claude3(update: Update, context):
+#     user_id = update.effective_user.id
+#     bot_name = bot_names['claude3']
+#     await switch_model(user_id, bot_name, update, context)
+
+def create_switch_model_function(bot_name):
+    async def switch_model_func(update, context):
+        user_id = update.effective_user.id
+        await switch_model(user_id, bot_name, update, context)
+    return switch_model_func
+
+#你也可以直接只用`bot_names`的keys来命名创建。这样只用维护`bot_names`字典即可。 Also you create function names directly using bot_names.keys().
+for bot_name in model_functions.values():
+    bot_func_name = bot_name.lower()
+    bot_name = bot_names[bot_name]
+    switch_model_func = create_switch_model_function(bot_name)
+    globals()[bot_func_name] = switch_model_func
 
 async def switch_model(user_id, bot_name, update, context):
     if user_id not in user_context or user_context[user_id]['bot_name'] != bot_name:
@@ -142,14 +161,18 @@ def main():
     new_handler = CommandHandler('new', new_conversation)
     application.add_handler(new_handler)
 
-    message_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+    message_handler = MessageHandler(filters.TEXT & ~filters.COMMAND & filters.User(users), handle_message)
     application.add_handler(message_handler)
 
-    gpt4_handler = CommandHandler('gpt4', gpt4)
-    application.add_handler(gpt4_handler)
+    # gpt4_handler = CommandHandler('gpt4', gpt4)
+    # application.add_handler(gpt4_handler)
 
-    claude3_handler = CommandHandler('claude3', claude3)
-    application.add_handler(claude3_handler)
+    # claude3_handler = CommandHandler('claude3', claude3)
+    # application.add_handler(claude3_handler)
+    #注销以上的代码，使用遍历的形式注册handler。 Uncomment the above code and using iteration to register handlers.
+    handlers = model_functions
+    for command, handler_func in handlers.items():
+        application.add_handler(CommandHandler(command, globals()[handler_func]))
 
     # 运行
     application.run_polling()
